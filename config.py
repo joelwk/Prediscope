@@ -52,6 +52,8 @@ class Settings:
         "espn.com",
         "cbssports.com",
         "nba.com",
+        "nhl.com",
+        "hockey-reference.com",
         "covers.com",
         "sportsbookreview.com",
         "theathletic.com",
@@ -104,6 +106,8 @@ class Settings:
         "espn.com",
         "cbssports.com",
         "nba.com",
+        "nhl.com",
+        "hockey-reference.com",
         "covers.com",
         "sportsbookreview.com",
         "theathletic.com",
@@ -215,14 +219,15 @@ class Settings:
     URGENT_REANALYSIS_DAYS_BEFORE_CLOSE: int = 1
     URGENT_REANALYSIS_COOLDOWN_HOURS: int = 1
     PARALLEL_ANALYSIS_ENABLED: bool = True
-    ANALYSIS_MAX_WORKERS: int = 3
+    ANALYSIS_MAX_WORKERS: int = 5
 
     # Resolution tracking
     RESOLUTION_SYNC_INTERVAL_CYCLES: int = 3
 
     # Position limits
     MAX_POSITION_PER_MARKET_USDC: float = 200.0
-    MAX_POSITION_PCT_OF_BANKROLL: float = 0.15
+    MAX_POSITION_PCT_OF_BANKROLL: float = 0.25
+    POSITION_CAP_FLOOR_TO_MIN_BET: bool = True
     MIN_CONFIDENCE_INCREASE_FOR_ADD: float = 0.10
     HIGH_CONFIDENCE_POSITION_OVERRIDE: float = 0.85  # Allow adding to position if conf >= this
     OPPOSITE_OUTCOME_STRATEGY: str = "block"  # block|hedge
@@ -235,7 +240,9 @@ class Settings:
     BAYESIAN_ENABLED: bool = False
     BAYESIAN_SKIP_STALE_UPDATES: bool = True
     BAYESIAN_PRIOR_DEFAULT: float = 0.50
-    BAYESIAN_MIN_UPDATES_FOR_TRADE: int = 1
+    BAYESIAN_MIN_UPDATES_FOR_TRADE: int = 2
+    BAYESIAN_SHORT_HORIZON_HOURS: int = 24
+    BAYESIAN_MIN_UPDATES_SHORT_HORIZON: int = 1
     LMSR_ENABLED: bool = False
     LMSR_LIQUIDITY_PARAM_B: float = 100000.0
     LMSR_MIN_INEFFICIENCY: float = 0.05
@@ -244,6 +251,9 @@ class Settings:
     KELLY_FRACTION_SHORT_HORIZON_HOURS: int = 1
     KELLY_FRACTION_SHORT_HORIZON: float = 0.10
     KELLY_MIN_BET_POLICY: str = "fallback_edge_scaling"  # skip|floor|fallback_edge_scaling
+    STRONG_EDGE_INITIAL_ENTRY_ENABLED: bool = True
+    STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE: float = 0.05
+    STRONG_EDGE_INITIAL_ENTRY_BET_PCT: float = 1.0
 
     # Side-flip guardrails
     FLIP_GUARD_ENABLED: bool = True
@@ -544,6 +554,10 @@ def load_settings() -> Settings:
             "MAX_POSITION_PCT_OF_BANKROLL",
             Settings.MAX_POSITION_PCT_OF_BANKROLL,
         ),
+        POSITION_CAP_FLOOR_TO_MIN_BET=_read_env_bool(
+            "POSITION_CAP_FLOOR_TO_MIN_BET",
+            Settings.POSITION_CAP_FLOOR_TO_MIN_BET,
+        ),
         MIN_CONFIDENCE_INCREASE_FOR_ADD=_read_env_float(
             "MIN_CONFIDENCE_INCREASE_FOR_ADD",
             Settings.MIN_CONFIDENCE_INCREASE_FOR_ADD,
@@ -580,6 +594,14 @@ def load_settings() -> Settings:
             "BAYESIAN_MIN_UPDATES_FOR_TRADE",
             Settings.BAYESIAN_MIN_UPDATES_FOR_TRADE,
         ),
+        BAYESIAN_SHORT_HORIZON_HOURS=_read_env_int(
+            "BAYESIAN_SHORT_HORIZON_HOURS",
+            Settings.BAYESIAN_SHORT_HORIZON_HOURS,
+        ),
+        BAYESIAN_MIN_UPDATES_SHORT_HORIZON=_read_env_int(
+            "BAYESIAN_MIN_UPDATES_SHORT_HORIZON",
+            Settings.BAYESIAN_MIN_UPDATES_SHORT_HORIZON,
+        ),
         LMSR_ENABLED=_read_env_bool(
             "LMSR_ENABLED",
             Settings.LMSR_ENABLED,
@@ -611,6 +633,18 @@ def load_settings() -> Settings:
         KELLY_MIN_BET_POLICY=_read_env_str(
             "KELLY_MIN_BET_POLICY",
             Settings.KELLY_MIN_BET_POLICY,
+        ),
+        STRONG_EDGE_INITIAL_ENTRY_ENABLED=_read_env_bool(
+            "STRONG_EDGE_INITIAL_ENTRY_ENABLED",
+            Settings.STRONG_EDGE_INITIAL_ENTRY_ENABLED,
+        ),
+        STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE=_read_env_float(
+            "STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE",
+            Settings.STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE,
+        ),
+        STRONG_EDGE_INITIAL_ENTRY_BET_PCT=_read_env_float(
+            "STRONG_EDGE_INITIAL_ENTRY_BET_PCT",
+            Settings.STRONG_EDGE_INITIAL_ENTRY_BET_PCT,
         ),
         FLIP_GUARD_ENABLED=_read_env_bool(
             "FLIP_GUARD_ENABLED",

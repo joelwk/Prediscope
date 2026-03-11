@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from config import Settings
 from main import (
+    _bayesian_min_updates_for_market,
     _best_orderbook_sell_price,
     _build_reasoning_hash,
     _cap_effective_confidence_for_market,
@@ -227,6 +228,8 @@ class TestMainUtils(unittest.TestCase):
         settings = Settings(
             MAX_POSITION_PER_MARKET_USDC=200.0,
             MAX_POSITION_PCT_OF_BANKROLL=0.15,
+            POSITION_CAP_FLOOR_TO_MIN_BET=True,
+            MIN_BET_USDC=5.0,
             MAX_BET_USDC=50.0,
             XAI_API_KEY="xai-key",
             WALLET_PRIVATE_KEY="wallet-key",
@@ -257,7 +260,29 @@ class TestMainUtils(unittest.TestCase):
         )
         self.assertTrue(allowed)
         self.assertEqual(reason, "confidence_increase_threshold_met")
-        self.assertAlmostEqual(bet_pct, 0.01, places=4)
+        self.assertAlmostEqual(bet_pct, 0.05, places=4)
+
+    def test_bayesian_min_updates_uses_short_horizon_override(self) -> None:
+        now = datetime.now(timezone.utc)
+        near_market = Market(
+            id="m-near",
+            question="Near close",
+            close_time=now + timedelta(hours=3),
+        )
+        far_market = Market(
+            id="m-far",
+            question="Far close",
+            close_time=now + timedelta(hours=48),
+        )
+        settings = Settings(
+            BAYESIAN_MIN_UPDATES_FOR_TRADE=2,
+            BAYESIAN_SHORT_HORIZON_HOURS=24,
+            BAYESIAN_MIN_UPDATES_SHORT_HORIZON=1,
+            XAI_API_KEY="xai-key",
+            WALLET_PRIVATE_KEY="wallet-key",
+        )
+        self.assertEqual(_bayesian_min_updates_for_market(near_market, settings), 1)
+        self.assertEqual(_bayesian_min_updates_for_market(far_market, settings), 2)
 
     def test_build_reasoning_hash_ignores_validated_prefix_variation(self) -> None:
         decision_a = TradeDecision(

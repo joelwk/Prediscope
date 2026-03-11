@@ -492,15 +492,36 @@ def _applied_bayesian_posterior(
     return bayesian_posterior_raw
 
 
-def _kelly_fraction_for_market_horizon(market: Market, settings: Settings) -> float:
+def _market_horizon_hours(market: Market, now: datetime | None = None) -> float | None:
     if market.close_time is None:
-        return settings.KELLY_FRACTION_DEFAULT
+        return None
     close_time = market.close_time
     if close_time.tzinfo is None:
         close_time = close_time.replace(tzinfo=timezone.utc)
-    horizon_seconds = (close_time - datetime.now(timezone.utc)).total_seconds()
+    current_time = now or datetime.now(timezone.utc)
+    return (close_time - current_time).total_seconds() / 3600
+
+
+def _bayesian_min_updates_for_market(market: Market, settings: Settings) -> int:
+    default_min_updates = max(0, int(settings.BAYESIAN_MIN_UPDATES_FOR_TRADE))
+    short_horizon_hours = max(0, int(settings.BAYESIAN_SHORT_HORIZON_HOURS))
+    short_horizon_min_updates = max(0, int(settings.BAYESIAN_MIN_UPDATES_SHORT_HORIZON))
+    if short_horizon_hours <= 0:
+        return default_min_updates
+    horizon_hours = _market_horizon_hours(market)
+    if horizon_hours is None:
+        return default_min_updates
+    if horizon_hours <= short_horizon_hours:
+        return min(default_min_updates, short_horizon_min_updates)
+    return default_min_updates
+
+
+def _kelly_fraction_for_market_horizon(market: Market, settings: Settings) -> float:
+    horizon_hours = _market_horizon_hours(market)
+    if horizon_hours is None:
+        return settings.KELLY_FRACTION_DEFAULT
     short_horizon_seconds = max(0, settings.KELLY_FRACTION_SHORT_HORIZON_HOURS) * 3600
-    if short_horizon_seconds > 0 and horizon_seconds <= short_horizon_seconds:
+    if short_horizon_seconds > 0 and (horizon_hours * 3600) <= short_horizon_seconds:
         return settings.KELLY_FRACTION_SHORT_HORIZON
     return settings.KELLY_FRACTION_DEFAULT
 
@@ -999,9 +1020,21 @@ def _should_adjust_position(
     state: MarketState | None,
     settings: Settings,
     cycle_bankroll: float | None = None,
+    edge_value: float | None = None,
 ) -> tuple[bool, float, str]:
     """Determine if position should be added to and calculate amount."""
     if not existing_position:
+        strong_edge_entry_enabled = (
+            settings.STRONG_EDGE_INITIAL_ENTRY_ENABLED
+            and edge_value is not None
+            and edge_value >= settings.STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE
+        )
+        if strong_edge_entry_enabled:
+            boosted_bet_pct = max(
+                decision.bet_size_pct,
+                settings.STRONG_EDGE_INITIAL_ENTRY_BET_PCT,
+            )
+            return True, min(1.0, boosted_bet_pct), "new_position_strong_edge_boost"
         return True, decision.bet_size_pct, "new_position"
 
     if (
@@ -1015,6 +1048,8 @@ def _should_adjust_position(
     if cycle_bankroll is not None and cycle_bankroll > 0:
         bankroll_position_cap = cycle_bankroll * settings.MAX_POSITION_PCT_OF_BANKROLL
         effective_max_position = min(effective_max_position, bankroll_position_cap)
+    if settings.POSITION_CAP_FLOOR_TO_MIN_BET:
+        effective_max_position = max(effective_max_position, settings.MIN_BET_USDC)
 
     if existing_position.total_amount_usdc >= effective_max_position:
         return False, 0.0, "max_position_reached"
@@ -1090,6 +1125,7 @@ def _log_settings_summary(settings) -> None:
             "coinflip_price_lower": settings.COINFLIP_PRICE_LOWER,
             "coinflip_price_upper": settings.COINFLIP_PRICE_UPPER,
             "max_position_pct_of_bankroll": settings.MAX_POSITION_PCT_OF_BANKROLL,
+            "position_cap_floor_to_min_bet": settings.POSITION_CAP_FLOOR_TO_MIN_BET,
             "parallel_analysis_enabled": settings.PARALLEL_ANALYSIS_ENABLED,
             "analysis_max_workers": settings.ANALYSIS_MAX_WORKERS,
             "pre_order_market_refresh": settings.PRE_ORDER_MARKET_REFRESH,
@@ -1097,6 +1133,12 @@ def _log_settings_summary(settings) -> None:
             "orderbook_precheck_min_confidence": settings.ORDERBOOK_PRECHECK_MIN_CONFIDENCE,
             "calibration_mode_enabled": settings.CALIBRATION_MODE_ENABLED,
             "calibration_min_samples": settings.CALIBRATION_MIN_SAMPLES,
+            "bayesian_min_updates_for_trade": settings.BAYESIAN_MIN_UPDATES_FOR_TRADE,
+            "bayesian_short_horizon_hours": settings.BAYESIAN_SHORT_HORIZON_HOURS,
+            "bayesian_min_updates_short_horizon": settings.BAYESIAN_MIN_UPDATES_SHORT_HORIZON,
+            "strong_edge_initial_entry_enabled": settings.STRONG_EDGE_INITIAL_ENTRY_ENABLED,
+            "strong_edge_initial_entry_min_edge": settings.STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE,
+            "strong_edge_initial_entry_bet_pct": settings.STRONG_EDGE_INITIAL_ENTRY_BET_PCT,
             "opposite_outcome_strategy": settings.OPPOSITE_OUTCOME_STRATEGY,
             "flip_guard_enabled": settings.FLIP_GUARD_ENABLED,
             "flip_guard_min_abs_confidence": settings.FLIP_GUARD_MIN_ABS_CONFIDENCE,
@@ -1476,6 +1518,7 @@ def main() -> None:
             markets_refined = 0
             execution_candidates = 0
             score_gate_blocked = 0
+            score_gate_independent_blocked = 0
             flip_guard_triggered = 0
             flip_guard_blocked = 0
             flip_precheck_skipped_refinement = 0
@@ -1811,6 +1854,9 @@ def main() -> None:
                 bayesian_posterior_raw: float | None = None
                 bayesian_posterior_applied: float | None = None
                 bayesian_update_count: int = 0
+                bayesian_min_updates_for_market = _bayesian_min_updates_for_market(
+                    market, settings
+                )
                 lmsr_execution_price: float | None = None
                 ineff_signal: float | None = None
                 effective_confidence = decision.confidence
@@ -1900,7 +1946,7 @@ def main() -> None:
                             bayesian_posterior_applied = _applied_bayesian_posterior(
                                 bayesian_posterior_raw=bayesian_posterior_raw,
                                 bayesian_update_count=bayesian_update_count,
-                                min_updates_for_trade=settings.BAYESIAN_MIN_UPDATES_FOR_TRADE,
+                                min_updates_for_trade=bayesian_min_updates_for_market,
                             )
                             if bayesian_posterior_applied is not None:
                                 capped_confidence = _cap_effective_confidence_for_market(
@@ -1926,11 +1972,11 @@ def main() -> None:
                                     "Bayesian posterior not applied yet: market=%s updates=%d min_updates=%d",
                                     market.id,
                                     bayesian_update_count,
-                                    settings.BAYESIAN_MIN_UPDATES_FOR_TRADE,
+                                    bayesian_min_updates_for_market,
                                     data={
                                         "market_id": market.id,
                                         "bayesian_update_count": bayesian_update_count,
-                                        "bayesian_min_updates": settings.BAYESIAN_MIN_UPDATES_FOR_TRADE,
+                                        "bayesian_min_updates": bayesian_min_updates_for_market,
                                         "bayesian_posterior_raw": bayesian_posterior_raw,
                                     },
                                 )
@@ -2085,7 +2131,7 @@ def main() -> None:
                         "bayesian_posterior_applied": bayesian_posterior_applied,
                         "bayesian_applied": bayesian_posterior_applied is not None,
                         "bayesian_update_count": bayesian_update_count,
-                        "bayesian_min_updates": settings.BAYESIAN_MIN_UPDATES_FOR_TRADE,
+                        "bayesian_min_updates": bayesian_min_updates_for_market,
                         "likelihood_ratio": likelihood_ratio,
                     }
                     if score_mode == "shadow":
@@ -2098,7 +2144,9 @@ def main() -> None:
                         )
                     elif score_result.final_score < settings.SCORE_GATE_THRESHOLD:
                         score_gate_blocked += 1
+                        score_gate_independent_blocked += 1
                         trades_skipped_edge += 1
+                        score_payload["score_gate_independent_blocked"] = True
                         log_trade_decision(
                             market_id=market.id,
                             question=market.question,
@@ -2190,7 +2238,7 @@ def main() -> None:
                             "bayesian_posterior_applied": bayesian_posterior_applied,
                             "bayesian_applied": bayesian_posterior_applied is not None,
                             "bayesian_update_count": bayesian_update_count,
-                            "bayesian_min_updates": settings.BAYESIAN_MIN_UPDATES_FOR_TRADE,
+                            "bayesian_min_updates": bayesian_min_updates_for_market,
                             "likelihood_ratio": likelihood_ratio,
                             "implied_prob_market": implied_prob,
                             "min_edge_for_kelly": min_edge_for_kelly,
@@ -2245,7 +2293,7 @@ def main() -> None:
                                 "bayesian_posterior_raw": bayesian_posterior_raw,
                                 "bayesian_posterior_applied": bayesian_posterior_applied,
                                 "bayesian_update_count": bayesian_update_count,
-                                "bayesian_min_updates": settings.BAYESIAN_MIN_UPDATES_FOR_TRADE,
+                                "bayesian_min_updates": bayesian_min_updates_for_market,
                                 "likelihood_ratio": likelihood_ratio,
                             },
                         )
@@ -2270,7 +2318,7 @@ def main() -> None:
                                 "bayesian_posterior_applied": bayesian_posterior_applied,
                                 "bayesian_applied": bayesian_posterior_applied is not None,
                                 "bayesian_update_count": bayesian_update_count,
-                                "bayesian_min_updates": settings.BAYESIAN_MIN_UPDATES_FOR_TRADE,
+                                "bayesian_min_updates": bayesian_min_updates_for_market,
                                 "likelihood_ratio": likelihood_ratio,
                             },
                         )
@@ -2304,7 +2352,7 @@ def main() -> None:
                         "bayesian_posterior_applied": bayesian_posterior_applied,
                         "bayesian_applied": bayesian_posterior_applied is not None,
                         "bayesian_update_count": bayesian_update_count,
-                        "bayesian_min_updates": settings.BAYESIAN_MIN_UPDATES_FOR_TRADE,
+                        "bayesian_min_updates": bayesian_min_updates_for_market,
                         "likelihood_ratio": likelihood_ratio,
                         "implied_prob_market": implied_prob,
                         "min_edge_for_kelly": min_edge_for_kelly,
@@ -2349,6 +2397,7 @@ def main() -> None:
                     state,
                     settings,
                     cycle_bankroll=cycle_bankroll,
+                    edge_value=edge_value,
                 )
                 log_trade_decision(
                     market_id=market.id,
@@ -2384,7 +2433,7 @@ def main() -> None:
                         "bayesian_posterior_applied": bayesian_posterior_applied,
                         "bayesian_applied": bayesian_posterior_applied is not None,
                         "bayesian_update_count": bayesian_update_count,
-                        "bayesian_min_updates": settings.BAYESIAN_MIN_UPDATES_FOR_TRADE,
+                        "bayesian_min_updates": bayesian_min_updates_for_market,
                         "likelihood_ratio": likelihood_ratio,
                         "implied_prob_market": implied_prob,
                         "min_edge_for_kelly": min_edge_for_kelly,
@@ -2925,7 +2974,7 @@ def main() -> None:
                 "Cycle funnel: fetched=%d filtered=%d skipped_resolved=%d scheduler_skips=%d "
                 "(closed=%d recently=%d other=%d) "
                 "analyzed=%d refined=%d flip_precheck_skipped=%d flip_guard_triggered=%d "
-                "flip_guard_blocked=%d execution_candidates=%d order_attempts=%d "
+                "flip_guard_blocked=%d score_gate_sole_blocks=%d execution_candidates=%d order_attempts=%d "
                 "skipped_kelly_sub_floor=%d",
                 fetched_count,
                 len(markets),
@@ -2939,6 +2988,7 @@ def main() -> None:
                 flip_precheck_skipped_refinement,
                 flip_guard_triggered,
                 flip_guard_blocked,
+                score_gate_independent_blocked,
                 execution_candidates,
                 trades_attempted,
                 trades_skipped_kelly_sub_floor,
@@ -2959,6 +3009,7 @@ def main() -> None:
                     "flip_precheck_skipped_refinement": flip_precheck_skipped_refinement,
                     "flip_guard_triggered": flip_guard_triggered,
                     "flip_guard_blocked": flip_guard_blocked,
+                    "score_gate_independent_blocked": score_gate_independent_blocked,
                     "outcome_mismatch_blocked": outcome_mismatch_blocked,
                     "execution_candidates": execution_candidates,
                     "order_attempts": trades_attempted,
@@ -2994,6 +3045,7 @@ def main() -> None:
                     "flip_precheck_skipped_refinement": flip_precheck_skipped_refinement,
                     "flip_guard_triggered": flip_guard_triggered,
                     "flip_guard_blocked": flip_guard_blocked,
+                    "score_gate_independent_blocked": score_gate_independent_blocked,
                     "outcome_mismatch_blocked": outcome_mismatch_blocked,
                     "execution_candidates": execution_candidates,
                     "score_gate_blocked": score_gate_blocked,

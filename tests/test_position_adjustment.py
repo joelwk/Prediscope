@@ -32,6 +32,29 @@ def test_should_adjust_new_position() -> None:
     assert reason == "new_position"
 
 
+def test_should_adjust_new_position_strong_edge_boost() -> None:
+    settings = Settings(
+        MAX_BET_USDC=50.0,
+        STRONG_EDGE_INITIAL_ENTRY_ENABLED=True,
+        STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE=0.05,
+        STRONG_EDGE_INITIAL_ENTRY_BET_PCT=1.0,
+        XAI_API_KEY="xai-key",
+        WALLET_PRIVATE_KEY="wallet-key",
+    )
+    decision = _decision(0.8, 0.25)
+    should_add, bet_pct, reason = _should_adjust_position(
+        decision,
+        None,
+        None,
+        None,
+        settings,
+        edge_value=0.08,
+    )
+    assert should_add is True
+    assert bet_pct == 1.0
+    assert reason == "new_position_strong_edge_boost"
+
+
 def test_should_adjust_blocked_at_max_position() -> None:
     settings = Settings(
         MAX_BET_USDC=50.0,
@@ -125,6 +148,40 @@ def test_should_adjust_caps_to_remaining_room() -> None:
     assert reason == "high_confidence_override"
 
 
+def test_position_cap_floor_allows_min_bet_capacity() -> None:
+    settings = Settings(
+        MAX_BET_USDC=50.0,
+        MAX_POSITION_PER_MARKET_USDC=200.0,
+        MAX_POSITION_PCT_OF_BANKROLL=0.15,
+        POSITION_CAP_FLOOR_TO_MIN_BET=True,
+        MIN_BET_USDC=2.0,
+        MIN_CONFIDENCE_INCREASE_FOR_ADD=0.1,
+        XAI_API_KEY="xai-key",
+        WALLET_PRIVATE_KEY="wallet-key",
+    )
+    position = Position(
+        market_id="m1",
+        outcome="YES",
+        total_amount_usdc=1.0,
+        avg_confidence=0.7,
+        trade_count=2,
+        first_trade=datetime.now(timezone.utc),
+        last_trade=datetime.now(timezone.utc),
+    )
+    decision = _decision(0.85, 0.5)
+    should_add, bet_pct, reason = _should_adjust_position(
+        decision,
+        None,
+        position,
+        MarketState(market_id="m1"),
+        settings,
+        cycle_bankroll=4.42,
+    )
+    assert should_add is True
+    assert round(bet_pct, 4) == 0.02
+    assert reason == "high_confidence_override"
+
+
 def test_position_override_respects_sports_cap() -> None:
     settings = Settings(
         MAX_BET_USDC=50.0,
@@ -143,7 +200,7 @@ def test_position_override_respects_sports_cap() -> None:
         last_trade=datetime.now(timezone.utc),
     )
     market = MarketState(market_id="m1")
-    decision = _decision(0.80, 0.4)
+    decision = _decision(0.85, 0.4)
     should_add, bet_pct, reason = _should_adjust_position(
         decision,
         Market(id="m1", question="NBA: Test", outcomes=[]),

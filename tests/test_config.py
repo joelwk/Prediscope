@@ -170,6 +170,7 @@ class TestConfig(unittest.TestCase):
             "ORDERBOOK_PRECHECK_MIN_CONFIDENCE": "0.8",
             "CALIBRATION_MODE_ENABLED": "true",
             "CALIBRATION_MIN_SAMPLES": "25",
+            "POSITION_CAP_FLOOR_TO_MIN_BET": "false",
         }
         with patch.dict(os.environ, env, clear=True):
             settings = config.load_settings()
@@ -181,6 +182,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.ORDERBOOK_PRECHECK_MIN_CONFIDENCE, 0.8)
         self.assertTrue(settings.CALIBRATION_MODE_ENABLED)
         self.assertEqual(settings.CALIBRATION_MIN_SAMPLES, 25)
+        self.assertFalse(settings.POSITION_CAP_FLOOR_TO_MIN_BET)
 
     def test_bayesian_lmsr_kelly_settings_overrides(self) -> None:
         env = {
@@ -190,6 +192,8 @@ class TestConfig(unittest.TestCase):
             "BAYESIAN_SKIP_STALE_UPDATES": "false",
             "BAYESIAN_PRIOR_DEFAULT": "0.58",
             "BAYESIAN_MIN_UPDATES_FOR_TRADE": "3",
+            "BAYESIAN_SHORT_HORIZON_HOURS": "18",
+            "BAYESIAN_MIN_UPDATES_SHORT_HORIZON": "1",
             "LMSR_ENABLED": "true",
             "LMSR_LIQUIDITY_PARAM_B": "120000",
             "LMSR_MIN_INEFFICIENCY": "0.04",
@@ -198,6 +202,9 @@ class TestConfig(unittest.TestCase):
             "KELLY_FRACTION_SHORT_HORIZON_HOURS": "2",
             "KELLY_FRACTION_SHORT_HORIZON": "0.1",
             "KELLY_MIN_BET_POLICY": "floor",
+            "STRONG_EDGE_INITIAL_ENTRY_ENABLED": "true",
+            "STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE": "0.06",
+            "STRONG_EDGE_INITIAL_ENTRY_BET_PCT": "0.9",
             "MAX_POSITION_PCT_OF_BANKROLL": "0.12",
             "COINFLIP_PRICE_LOWER": "0.46",
             "COINFLIP_PRICE_UPPER": "0.54",
@@ -210,6 +217,8 @@ class TestConfig(unittest.TestCase):
         self.assertFalse(settings.BAYESIAN_SKIP_STALE_UPDATES)
         self.assertEqual(settings.BAYESIAN_PRIOR_DEFAULT, 0.58)
         self.assertEqual(settings.BAYESIAN_MIN_UPDATES_FOR_TRADE, 3)
+        self.assertEqual(settings.BAYESIAN_SHORT_HORIZON_HOURS, 18)
+        self.assertEqual(settings.BAYESIAN_MIN_UPDATES_SHORT_HORIZON, 1)
         self.assertTrue(settings.LMSR_ENABLED)
         self.assertEqual(settings.LMSR_LIQUIDITY_PARAM_B, 120000.0)
         self.assertEqual(settings.LMSR_MIN_INEFFICIENCY, 0.04)
@@ -218,6 +227,9 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.KELLY_FRACTION_SHORT_HORIZON_HOURS, 2)
         self.assertEqual(settings.KELLY_FRACTION_SHORT_HORIZON, 0.1)
         self.assertEqual(settings.KELLY_MIN_BET_POLICY, "floor")
+        self.assertTrue(settings.STRONG_EDGE_INITIAL_ENTRY_ENABLED)
+        self.assertEqual(settings.STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE, 0.06)
+        self.assertEqual(settings.STRONG_EDGE_INITIAL_ENTRY_BET_PCT, 0.9)
         self.assertEqual(settings.MAX_POSITION_PCT_OF_BANKROLL, 0.12)
         self.assertEqual(settings.COINFLIP_PRICE_LOWER, 0.46)
         self.assertEqual(settings.COINFLIP_PRICE_UPPER, 0.54)
@@ -228,6 +240,8 @@ class TestConfig(unittest.TestCase):
         self.assertIn("wtatennis.com", config.Settings.SPORTS_ALLOWED_DOMAINS)
         self.assertIn("tennisexplorer.com", config.Settings.SPORTS_ALLOWED_DOMAINS)
         self.assertIn("flashscore.com", config.Settings.SPORTS_ALLOWED_DOMAINS)
+        self.assertIn("nhl.com", config.Settings.SPORTS_ALLOWED_DOMAINS)
+        self.assertIn("hockey-reference.com", config.Settings.SPORTS_ALLOWED_DOMAINS)
         self.assertIn("atptour", config.Settings.SPORTS_ALLOWED_X_HANDLES)
         self.assertIn("WTA", config.Settings.SPORTS_ALLOWED_X_HANDLES)
 

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from config import SearchConfig, Settings
 from models import Market
 
-_MAX_SEARCH_DOMAINS = 5
+_MAX_SEARCH_DOMAINS = 7
 _MAX_SEARCH_HANDLES = 10
 
 _SPORTS_KEYWORDS = (
@@ -73,6 +73,30 @@ _POLITICS_KEYWORDS = (
     "referendum",
 )
 _LONG_HORIZON_HINTS = ("election", "presidential", "winner", "nominee")
+_SPORT_SUBCATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "champions_league": ("champions league", "uefa champions league", "ucl"),
+    "tennis": ("tennis", "atp", "wta"),
+    "hockey": ("nhl", "hockey", "ice hockey"),
+    "soccer": (
+        "soccer",
+        "football",
+        "la liga",
+        "premier league",
+        "serie a",
+        "bundesliga",
+        "ligue 1",
+        "eredivisie",
+        "copa",
+        "mls",
+        "europa league",
+        "uefa",
+    ),
+    "basketball": ("nba", "wnba", "college basketball"),
+    "american_football": ("nfl", "college football"),
+    "baseball": ("mlb",),
+    "combat_sports": ("mma", "ufc", "boxing"),
+    "motorsport": ("f1", "formula 1", "grand prix"),
+}
 
 
 @dataclass(frozen=True)
@@ -150,6 +174,23 @@ def market_category_flags(market: Market) -> tuple[bool, bool]:
     is_esports = any(keyword in text for keyword in _ESPORTS_KEYWORDS)
     is_sports = any(keyword in text for keyword in _SPORTS_KEYWORDS)
     return is_sports, is_esports
+
+
+def sport_subcategory(market: Market) -> str:
+    """Return a normalized sports subtype for risk tuning."""
+    category = (market.category or "").lower()
+    question = (market.question or "").lower()
+    text = f"{category} {question}"
+    is_sports, is_esports = market_category_flags(market)
+    if is_esports:
+        return "esports"
+    if not is_sports:
+        return "non_sports"
+
+    for subcategory, keywords in _SPORT_SUBCATEGORY_KEYWORDS.items():
+        if any(keyword in text for keyword in keywords):
+            return subcategory
+    return "other_sports"
 
 
 def _lookback_hours(settings: Settings, market: Market, now: datetime) -> int:

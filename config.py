@@ -14,7 +14,7 @@ class Settings:
     # Risk controls - Conservative defaults for value betting
     MIN_BET_USDC: float = 5.0
     MAX_BET_USDC: float = 50.0
-    MIN_CONFIDENCE: float = 0.50  # Allows mid-probability bets; edge + evidence gates handle quality
+    MIN_CONFIDENCE: float = 0.55  # Require stronger conviction before trading
     SLIPPAGE_CONFIDENCE_THRESHOLD: float = 0.70
     SLIPPAGE_PCT: float = 0.02
     MIN_LIQUIDITY_USDC: float = 100.0
@@ -24,11 +24,11 @@ class Settings:
     MIN_EDGE: float = 0.05
     LOW_PRICE_THRESHOLD: float = 0.50
     HIGH_PRICE_THRESHOLD: float = 0.65
-    LOW_PRICE_MIN_EDGE: float = 0.08
-    COINFLIP_PRICE_LOWER: float = 0.45
-    COINFLIP_PRICE_UPPER: float = 0.55
+    LOW_PRICE_MIN_EDGE: float = 0.12
+    COINFLIP_PRICE_LOWER: float = 0.42
+    COINFLIP_PRICE_UPPER: float = 0.58
     EDGE_SCALING_RANGE: float = 0.15
-    LOW_PRICE_BET_PENALTY: float = 0.50
+    LOW_PRICE_BET_PENALTY: float = 0.35
     FALLBACK_EDGE_MIN_EDGE: float = 0.08
     REQUIRE_IMPLIED_PRICE: bool = True
     
@@ -108,6 +108,13 @@ class Settings:
         "nba.com",
         "nhl.com",
         "hockey-reference.com",
+        "whoscored.com",
+        "sofascore.com",
+        "transfermarkt.com",
+        "fbref.com",
+        "soccerway.com",
+        "oddschecker.com",
+        "betexplorer.com",
         "covers.com",
         "sportsbookreview.com",
         "theathletic.com",
@@ -128,6 +135,10 @@ class Settings:
         "FDSportsbook",
         "DKSportsbook",
         "BetMGM",
+        "OptaJoe",
+        "LaLigaEN",
+        "ChampionsLeague",
+        "NHL_Stats",
         "ataborasso",
         "TennisChannel",
         "WTA",
@@ -206,7 +217,7 @@ class Settings:
     PRE_ORDER_MARKET_REFRESH: bool = False
     ORDERBOOK_PRECHECK_ENABLED: bool = False
     ORDERBOOK_PRECHECK_MIN_CONFIDENCE: float = 0.75
-    CALIBRATION_MODE_ENABLED: bool = False
+    CALIBRATION_MODE_ENABLED: bool = True
     CALIBRATION_MIN_SAMPLES: int = 20
 
     # State management
@@ -233,8 +244,8 @@ class Settings:
     OPPOSITE_OUTCOME_STRATEGY: str = "block"  # block|hedge
 
     # Score gate (phase A/B can run in shadow mode)
-    SCORE_GATE_MODE: str = "shadow"  # off|shadow|active
-    SCORE_GATE_THRESHOLD: float = 0.08
+    SCORE_GATE_MODE: str = "active"  # off|shadow|active
+    SCORE_GATE_THRESHOLD: float = 0.10
 
     # Bayesian + LMSR + Kelly experimental layers
     BAYESIAN_ENABLED: bool = False
@@ -252,8 +263,8 @@ class Settings:
     KELLY_FRACTION_SHORT_HORIZON: float = 0.10
     KELLY_MIN_BET_POLICY: str = "fallback_edge_scaling"  # skip|floor|fallback_edge_scaling
     STRONG_EDGE_INITIAL_ENTRY_ENABLED: bool = True
-    STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE: float = 0.05
-    STRONG_EDGE_INITIAL_ENTRY_BET_PCT: float = 1.0
+    STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE: float = 0.12
+    STRONG_EDGE_INITIAL_ENTRY_BET_PCT: float = 0.60
 
     # Side-flip guardrails
     FLIP_GUARD_ENABLED: bool = True

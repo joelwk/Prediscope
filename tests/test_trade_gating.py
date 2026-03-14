@@ -52,8 +52,8 @@ def test_edge_gate_allows_when_edge_clears_threshold() -> None:
         LOW_PRICE_THRESHOLD=0.50,
         LOW_PRICE_MIN_EDGE=0.08,
     )
-    implied_prob = 0.55
-    ok, edge, reason = _passes_edge_threshold(implied_prob, _decision(0.62), settings)
+    implied_prob = 0.60
+    ok, edge, reason = _passes_edge_threshold(implied_prob, _decision(0.67), settings)
     assert ok is True
     assert round(edge, 4) == 0.07
     assert reason == ""
@@ -96,7 +96,7 @@ def test_edge_based_sizing_scales_down_for_small_edge() -> None:
         LOW_PRICE_BET_PENALTY=0.5,
     )
     decision = _decision(0.66, bet_size_pct=0.6)
-    implied_prob = 0.55
+    implied_prob = 0.60
     edge = 0.06
     adjusted = _adjust_bet_size_for_edge(decision, implied_prob, edge, settings)
     assert 0 < adjusted < decision.bet_size_pct

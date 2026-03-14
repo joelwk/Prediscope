@@ -42,7 +42,11 @@ from models import (
 )
 from predictbase_client import PredictBaseClient
 from refinement import RefinementStrategy
-from research_profiles import build_market_search_config, market_category_flags
+from research_profiles import (
+    build_market_search_config,
+    market_category_flags,
+    sport_subcategory,
+)
 from score_engine import compute_final_score
 from web3_client import Web3Client
 
@@ -70,6 +74,11 @@ _KELLY_MIN_BET_POLICY_SKIP = "skip"
 _KELLY_MIN_BET_POLICY_FLOOR = "floor"
 _KELLY_MIN_BET_POLICY_FALLBACK_EDGE = "fallback_edge_scaling"
 _RE_VALIDATED_PREFIX = re.compile(r"^\[Validated\b[^\]]*\]\s*")
+_SPORT_EDGE_MULTIPLIERS: dict[str, float] = {
+    "tennis": 1.3,
+    "hockey": 1.2,
+    "champions_league": 1.3,
+}
 
 
 def _normalize_outcome_key(outcome: str | None) -> str:
@@ -359,6 +368,7 @@ def _edge_threshold_for_market(
     implied_prob: float,
     settings: Settings,
     edge_source: str | None = None,
+    market: Market | None = None,
 ) -> float:
     min_edge = settings.MIN_EDGE
     if implied_prob < settings.LOW_PRICE_THRESHOLD:
@@ -367,6 +377,10 @@ def _edge_threshold_for_market(
         min_edge = max(min_edge, settings.LOW_PRICE_MIN_EDGE)
     if (edge_source or "").lower() == "fallback":
         min_edge = max(min_edge, settings.FALLBACK_EDGE_MIN_EDGE)
+    if market is not None:
+        sports_subcategory = sport_subcategory(market)
+        multiplier = _SPORT_EDGE_MULTIPLIERS.get(sports_subcategory, 1.0)
+        min_edge *= multiplier
     return min_edge
 
 
@@ -374,13 +388,19 @@ def _passes_edge_threshold(
     implied_prob: float | None,
     decision: TradeDecision,
     settings: Settings,
+    market: Market | None = None,
 ) -> tuple[bool, float | None, str]:
     if implied_prob is None:
         if settings.REQUIRE_IMPLIED_PRICE:
             return False, None, "missing implied probability"
         return True, None, ""
     edge = decision.confidence - implied_prob
-    min_edge = _edge_threshold_for_market(implied_prob, settings, decision.edge_source)
+    min_edge = _edge_threshold_for_market(
+        implied_prob,
+        settings,
+        market=market,
+        edge_source=decision.edge_source,
+    )
     if edge < min_edge:
         return False, edge, f"edge {edge:.2f} below min {min_edge:.2f}"
     return True, edge, ""
@@ -391,10 +411,16 @@ def _adjust_bet_size_for_edge(
     implied_prob: float | None,
     edge: float | None,
     settings: Settings,
+    market: Market | None = None,
 ) -> float:
     if edge is None or implied_prob is None:
         return decision.bet_size_pct
-    min_edge = _edge_threshold_for_market(implied_prob, settings, decision.edge_source)
+    min_edge = _edge_threshold_for_market(
+        implied_prob,
+        settings,
+        market=market,
+        edge_source=decision.edge_source,
+    )
     edge_over = edge - min_edge
     if edge_over <= 0:
         return 0.0
@@ -1999,6 +2025,7 @@ def main() -> None:
                     implied_prob,
                     decision_for_edge,
                     settings,
+                    market=market,
                 )
                 if settings.CALIBRATION_MODE_ENABLED:
                     calibration_payload = {
@@ -2176,6 +2203,7 @@ def main() -> None:
                     implied_prob,
                     edge_value,
                     settings,
+                    market=market,
                 )
                 if settings.KELLY_SIZING_ENABLED and implied_prob is not None:
                     if posterior_for_kelly is None:
@@ -2186,7 +2214,11 @@ def main() -> None:
                         )
                     if kelly_fraction_value is None:
                         kelly_fraction_value = _kelly_fraction_for_market_horizon(market, settings)
-                    min_edge_for_kelly = _edge_threshold_for_market(implied_prob, settings)
+                    min_edge_for_kelly = _edge_threshold_for_market(
+                        implied_prob,
+                        settings,
+                        market=market,
+                    )
                     adjusted_bet_pct = kelly_bet_pct(
                         posterior=posterior_for_kelly,
                         market_price=implied_prob,

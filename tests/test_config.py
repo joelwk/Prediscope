@@ -168,6 +168,7 @@ class TestConfig(unittest.TestCase):
             "PRE_ORDER_MARKET_REFRESH": "true",
             "ORDERBOOK_PRECHECK_ENABLED": "true",
             "ORDERBOOK_PRECHECK_MIN_CONFIDENCE": "0.8",
+            "MIN_ORDER_INTERVAL_SECONDS": "180",
             "CALIBRATION_MODE_ENABLED": "true",
             "CALIBRATION_MIN_SAMPLES": "25",
             "POSITION_CAP_FLOOR_TO_MIN_BET": "false",
@@ -180,6 +181,7 @@ class TestConfig(unittest.TestCase):
         self.assertTrue(settings.PRE_ORDER_MARKET_REFRESH)
         self.assertTrue(settings.ORDERBOOK_PRECHECK_ENABLED)
         self.assertEqual(settings.ORDERBOOK_PRECHECK_MIN_CONFIDENCE, 0.8)
+        self.assertEqual(settings.MIN_ORDER_INTERVAL_SECONDS, 180)
         self.assertTrue(settings.CALIBRATION_MODE_ENABLED)
         self.assertEqual(settings.CALIBRATION_MIN_SAMPLES, 25)
         self.assertFalse(settings.POSITION_CAP_FLOOR_TO_MIN_BET)
@@ -205,6 +207,8 @@ class TestConfig(unittest.TestCase):
             "STRONG_EDGE_INITIAL_ENTRY_ENABLED": "true",
             "STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE": "0.06",
             "STRONG_EDGE_INITIAL_ENTRY_BET_PCT": "0.9",
+            "STRONG_EDGE_MIN_EVIDENCE_QUALITY": "0.7",
+            "STRONG_EDGE_MIN_IMPLIED_PROB": "0.55",
             "MAX_POSITION_PCT_OF_BANKROLL": "0.12",
             "COINFLIP_PRICE_LOWER": "0.46",
             "COINFLIP_PRICE_UPPER": "0.54",
@@ -230,6 +234,8 @@ class TestConfig(unittest.TestCase):
         self.assertTrue(settings.STRONG_EDGE_INITIAL_ENTRY_ENABLED)
         self.assertEqual(settings.STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE, 0.06)
         self.assertEqual(settings.STRONG_EDGE_INITIAL_ENTRY_BET_PCT, 0.9)
+        self.assertEqual(settings.STRONG_EDGE_MIN_EVIDENCE_QUALITY, 0.7)
+        self.assertEqual(settings.STRONG_EDGE_MIN_IMPLIED_PROB, 0.55)
         self.assertEqual(settings.MAX_POSITION_PCT_OF_BANKROLL, 0.12)
         self.assertEqual(settings.COINFLIP_PRICE_LOWER, 0.46)
         self.assertEqual(settings.COINFLIP_PRICE_UPPER, 0.54)

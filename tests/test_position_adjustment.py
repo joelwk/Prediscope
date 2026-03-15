@@ -7,12 +7,17 @@ from main import _should_adjust_position
 from models import Market, MarketState, Position, TradeDecision
 
 
-def _decision(confidence: float, bet_size_pct: float = 0.5) -> TradeDecision:
+def _decision(
+    confidence: float,
+    bet_size_pct: float = 0.5,
+    evidence_quality: float = 0.0,
+) -> TradeDecision:
     return TradeDecision(
         should_trade=True,
         outcome="YES",
         confidence=confidence,
         bet_size_pct=bet_size_pct,
+        evidence_quality=evidence_quality,
         reasoning="test",
     )
 
@@ -41,7 +46,7 @@ def test_should_adjust_new_position_strong_edge_boost() -> None:
         XAI_API_KEY="xai-key",
         WALLET_PRIVATE_KEY="wallet-key",
     )
-    decision = _decision(0.8, 0.25)
+    decision = _decision(0.8, 0.25, evidence_quality=0.8)
     should_add, bet_pct, reason = _should_adjust_position(
         decision,
         None,
@@ -49,6 +54,7 @@ def test_should_adjust_new_position_strong_edge_boost() -> None:
         None,
         settings,
         edge_value=0.08,
+        implied_prob=0.6,
     )
     assert should_add is True
     assert bet_pct == 1.0

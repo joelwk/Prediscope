@@ -17,7 +17,7 @@ def run(db_path: str) -> None:
     try:
         rows = conn.execute(
             """
-            SELECT confidence, implied_prob, won
+            SELECT confidence, implied_prob, won, pnl_estimate, sport_subcategory, entry_price
             FROM trade_outcomes
             WHERE confidence IS NOT NULL
               AND won IS NOT NULL
@@ -62,6 +62,33 @@ def run(db_path: str) -> None:
                 print(
                     f"  decile={idx // decile_size + 1} n={len(decile)} "
                     f"avg_edge={avg_edge:.4f} win_rate={win_rate:.2%}"
+                )
+
+        per_subcategory: dict[str, list[sqlite3.Row]] = defaultdict(list)
+        for row in rows:
+            key = str(row["sport_subcategory"] or "").strip().lower()
+            if key:
+                per_subcategory[key].append(row)
+        if per_subcategory:
+            print("\nPer-subcategory performance:")
+            for subcategory in sorted(per_subcategory):
+                samples = per_subcategory[subcategory]
+                count = len(samples)
+                win_rate = sum(int(item["won"]) for item in samples) / count
+                avg_confidence = sum(float(item["confidence"]) for item in samples) / count
+                edges = [
+                    float(item["confidence"]) - float(item["implied_prob"])
+                    for item in samples
+                    if item["implied_prob"] is not None
+                ]
+                avg_edge = sum(edges) / len(edges) if edges else 0.0
+                total_pnl = sum(float(item["pnl_estimate"] or 0.0) for item in samples)
+                avg_entry_price = sum(float(item["entry_price"] or 0.0) for item in samples) / count
+                underperforming = win_rate < (avg_entry_price - 0.05)
+                print(
+                    f"  {subcategory}: n={count} win_rate={win_rate:.2%} "
+                    f"avg_edge={avg_edge:.4f} avg_conf={avg_confidence:.4f} "
+                    f"total_pnl={total_pnl:.2f} underperforming={underperforming}"
                 )
     finally:
         conn.close()

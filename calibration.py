@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
 
 _EDGE_MIN = 0.03
@@ -7,6 +8,8 @@ _EDGE_MAX = 0.07
 _SPREAD_MIN = 0.06
 _SPREAD_MAX = 0.12
 _DEFAULT_EDGE_THRESHOLDS = (0.03, 0.04, 0.05, 0.06)
+_CATEGORY_PERFORMANCE_MARGIN = 0.05
+_CATEGORY_EDGE_STEP = 0.10
 
 
 def build_counterfactual_flags(
@@ -81,6 +84,49 @@ def compute_adaptive_thresholds(
         "insufficient_edge_data": not has_min_edge_data,
         "insufficient_spread_data": not has_min_spread_data,
     }
+
+
+def compute_category_edge_adjustments(
+    db_path: str,
+    min_samples: int = 20,
+) -> dict[str, float]:
+    """Recommend additive edge multipliers by sport_subcategory from resolved outcomes."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT sport_subcategory, entry_price, won
+            FROM trade_outcomes
+            WHERE sport_subcategory IS NOT NULL
+              AND sport_subcategory <> ''
+              AND entry_price IS NOT NULL
+              AND won IS NOT NULL
+            """
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+
+    grouped: dict[str, list[tuple[float, int]]] = {}
+    for row in rows:
+        category = str(row["sport_subcategory"]).strip().lower()
+        if not category:
+            continue
+        grouped.setdefault(category, []).append(
+            (float(row["entry_price"]), int(row["won"]))
+        )
+
+    recommendations: dict[str, float] = {}
+    for category, samples in grouped.items():
+        if len(samples) < min_samples:
+            continue
+        avg_entry_price = sum(item[0] for item in samples) / len(samples)
+        win_rate = sum(item[1] for item in samples) / len(samples)
+        if win_rate < (avg_entry_price - _CATEGORY_PERFORMANCE_MARGIN):
+            recommendations[category] = round(_CATEGORY_EDGE_STEP, 4)
+    return recommendations
 
 
 def _quantile(values: list[float], q: float) -> float:

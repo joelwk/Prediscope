@@ -217,6 +217,7 @@ class Settings:
     PRE_ORDER_MARKET_REFRESH: bool = False
     ORDERBOOK_PRECHECK_ENABLED: bool = False
     ORDERBOOK_PRECHECK_MIN_CONFIDENCE: float = 0.75
+    MIN_ORDER_INTERVAL_SECONDS: int = 120
     CALIBRATION_MODE_ENABLED: bool = True
     CALIBRATION_MIN_SAMPLES: int = 20
 
@@ -265,6 +266,8 @@ class Settings:
     STRONG_EDGE_INITIAL_ENTRY_ENABLED: bool = True
     STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE: float = 0.12
     STRONG_EDGE_INITIAL_ENTRY_BET_PCT: float = 0.60
+    STRONG_EDGE_MIN_EVIDENCE_QUALITY: float = 0.60
+    STRONG_EDGE_MIN_IMPLIED_PROB: float = 0.50
 
     # Side-flip guardrails
     FLIP_GUARD_ENABLED: bool = True
@@ -520,6 +523,9 @@ def load_settings() -> Settings:
             "ORDERBOOK_PRECHECK_MIN_CONFIDENCE",
             Settings.ORDERBOOK_PRECHECK_MIN_CONFIDENCE,
         ),
+        MIN_ORDER_INTERVAL_SECONDS=_read_env_int(
+            "MIN_ORDER_INTERVAL_SECONDS", Settings.MIN_ORDER_INTERVAL_SECONDS
+        ),
         CALIBRATION_MODE_ENABLED=_read_env_bool(
             "CALIBRATION_MODE_ENABLED", Settings.CALIBRATION_MODE_ENABLED
         ),
@@ -656,6 +662,14 @@ def load_settings() -> Settings:
         STRONG_EDGE_INITIAL_ENTRY_BET_PCT=_read_env_float(
             "STRONG_EDGE_INITIAL_ENTRY_BET_PCT",
             Settings.STRONG_EDGE_INITIAL_ENTRY_BET_PCT,
+        ),
+        STRONG_EDGE_MIN_EVIDENCE_QUALITY=_read_env_float(
+            "STRONG_EDGE_MIN_EVIDENCE_QUALITY",
+            Settings.STRONG_EDGE_MIN_EVIDENCE_QUALITY,
+        ),
+        STRONG_EDGE_MIN_IMPLIED_PROB=_read_env_float(
+            "STRONG_EDGE_MIN_IMPLIED_PROB",
+            Settings.STRONG_EDGE_MIN_IMPLIED_PROB,
         ),
         FLIP_GUARD_ENABLED=_read_env_bool(
             "FLIP_GUARD_ENABLED",

@@ -13,7 +13,11 @@ from bayesian_engine import (
     log_likelihood_from_ratio,
     posterior_from_state,
 )
-from calibration import build_counterfactual_flags, compute_adaptive_thresholds
+from calibration import (
+    build_counterfactual_flags,
+    compute_adaptive_thresholds,
+    compute_category_edge_adjustments,
+)
 from config import Settings, load_settings
 from grok_client import GrokClient
 from kelly import kelly_bet_pct, kelly_fraction
@@ -76,8 +80,13 @@ _KELLY_MIN_BET_POLICY_FALLBACK_EDGE = "fallback_edge_scaling"
 _RE_VALIDATED_PREFIX = re.compile(r"^\[Validated\b[^\]]*\]\s*")
 _SPORT_EDGE_MULTIPLIERS: dict[str, float] = {
     "tennis": 1.3,
-    "hockey": 1.2,
+    "hockey": 1.3,
     "champions_league": 1.3,
+    "soccer": 1.3,
+    "baseball": 1.4,
+    "esports": 1.5,
+    "combat_sports": 1.3,
+    "motorsport": 1.2,
 }
 
 
@@ -1047,6 +1056,7 @@ def _should_adjust_position(
     settings: Settings,
     cycle_bankroll: float | None = None,
     edge_value: float | None = None,
+    implied_prob: float | None = None,
 ) -> tuple[bool, float, str]:
     """Determine if position should be added to and calculate amount."""
     if not existing_position:
@@ -1054,6 +1064,9 @@ def _should_adjust_position(
             settings.STRONG_EDGE_INITIAL_ENTRY_ENABLED
             and edge_value is not None
             and edge_value >= settings.STRONG_EDGE_INITIAL_ENTRY_MIN_EDGE
+            and decision.evidence_quality >= settings.STRONG_EDGE_MIN_EVIDENCE_QUALITY
+            and implied_prob is not None
+            and implied_prob >= settings.STRONG_EDGE_MIN_IMPLIED_PROB
         )
         if strong_edge_entry_enabled:
             boosted_bet_pct = max(
@@ -2430,6 +2443,7 @@ def main() -> None:
                     settings,
                     cycle_bankroll=cycle_bankroll,
                     edge_value=edge_value,
+                    implied_prob=implied_prob,
                 )
                 log_trade_decision(
                     market_id=market.id,
@@ -2794,6 +2808,40 @@ def main() -> None:
                 )
 
                 try:
+                    last_trade_timestamp = state_manager.last_trade_timestamp(market.id)
+                    if (
+                        last_trade_timestamp is not None
+                        and datetime.now(timezone.utc) - last_trade_timestamp
+                        < timedelta(seconds=settings.MIN_ORDER_INTERVAL_SECONDS)
+                    ):
+                        logger.info(
+                            "Order skipped due to recent trade interval: market=%s interval=%ss",
+                            market.id,
+                            settings.MIN_ORDER_INTERVAL_SECONDS,
+                            data={
+                                "market_id": market.id,
+                                "min_order_interval_seconds": settings.MIN_ORDER_INTERVAL_SECONDS,
+                                "last_trade_timestamp": last_trade_timestamp.isoformat(),
+                            },
+                        )
+                        log_trade_decision(
+                            market_id=market.id,
+                            question=market.question,
+                            decision=decision_for_edge.model_copy(
+                                update={"bet_size_pct": bet_pct}
+                            ).model_dump(),
+                            execution_audit={
+                                "decision_phase": "order_submission",
+                                "decision_terminal": True,
+                                "final_action": "skip",
+                                "final_reason": "order_too_recent",
+                                "bet_amount_usdc": bet_amount,
+                                "last_trade_timestamp": last_trade_timestamp.isoformat(),
+                                "min_order_interval_seconds": settings.MIN_ORDER_INTERVAL_SECONDS,
+                            },
+                        )
+                        _record_terminal_outcome(state_manager, market.id, "order_too_recent")
+                        continue
                     order_response = predictbase_client.submit_order(
                         order,
                         market=active_market,
@@ -2943,6 +2991,7 @@ def main() -> None:
                         order_response,
                         bet_amount,
                         outcome=decision.outcome,
+                        sport_subcategory=sport_subcategory(market),
                         entry_price=client_price or entry_price,
                         implied_prob=implied_prob,
                         confidence=decision_for_edge.confidence,
@@ -3001,6 +3050,18 @@ def main() -> None:
                     recommendation["recommended_analysis_max_workers"],
                     recommendation["sample_count"],
                     data=recommendation,
+                )
+                category_adjustments = compute_category_edge_adjustments(
+                    db_path=settings.STATE_DB_PATH,
+                    min_samples=settings.CALIBRATION_MIN_SAMPLES,
+                )
+                logger.info(
+                    "Category edge adjustment snapshot: categories=%d",
+                    len(category_adjustments),
+                    data={
+                        "category_edge_adjustments": category_adjustments,
+                        "source": "shadow_recommendation",
+                    },
                 )
             logger.info(
                 "Cycle funnel: fetched=%d filtered=%d skipped_resolved=%d scheduler_skips=%d "

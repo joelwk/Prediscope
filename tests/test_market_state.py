@@ -277,3 +277,27 @@ def test_get_outcome_flip_count_counts_transitions(tmp_path) -> None:
         assert manager.get_outcome_flip_count(market_id) == 3
     finally:
         manager.close()
+
+
+def test_last_trade_timestamp_and_subcategory_persistence(tmp_path) -> None:
+    manager = MarketStateManager(str(tmp_path / "state.db"))
+    try:
+        market_id = "m-subcat"
+        manager.record_analysis(market_id, _decision(0.67), is_refined=False)
+        manager.record_trade(
+            market_id,
+            OrderResponse(id="o-subcat", raw={"outcome": "YES"}),
+            8.0,
+            outcome="YES",
+            sport_subcategory="hockey",
+        )
+        last_trade = manager.last_trade_timestamp(market_id)
+        assert last_trade is not None
+        row = manager._conn.execute(
+            "SELECT sport_subcategory FROM trade_outcomes WHERE market_id = ?",
+            (market_id,),
+        ).fetchone()
+        assert row is not None
+        assert row["sport_subcategory"] == "hockey"
+    finally:
+        manager.close()

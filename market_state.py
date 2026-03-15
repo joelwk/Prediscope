@@ -85,6 +85,7 @@ class MarketStateManager:
                 CREATE TABLE IF NOT EXISTS trade_outcomes (
                     market_id TEXT PRIMARY KEY,
                     predicted_outcome TEXT,
+                    sport_subcategory TEXT,
                     entry_price REAL,
                     implied_prob REAL,
                     confidence REAL,
@@ -256,6 +257,19 @@ class MarketStateManager:
             first_trade=first_trade,
             last_trade=last_trade,
         )
+
+    def last_trade_timestamp(self, market_id: str) -> datetime | None:
+        row = self._conn.execute(
+            """
+            SELECT MAX(timestamp) AS last_trade
+            FROM trade_log
+            WHERE market_id = ?
+            """,
+            (market_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return _parse_timestamp(row["last_trade"])
 
     def get_anchor_analysis(
         self,
@@ -452,6 +466,7 @@ class MarketStateManager:
         order: OrderResponse,
         amount: float,
         outcome: str | None = None,
+        sport_subcategory: str | None = None,
         entry_price: float | None = None,
         implied_prob: float | None = None,
         confidence: float | None = None,
@@ -553,6 +568,7 @@ class MarketStateManager:
             self._upsert_trade_outcome_entry(
                 market_id=market_id,
                 predicted_outcome=outcome,
+                sport_subcategory=sport_subcategory,
                 entry_price=entry_price,
                 implied_prob=implied_prob,
                 confidence=confidence,
@@ -658,6 +674,7 @@ class MarketStateManager:
         self,
         market_id: str,
         predicted_outcome: str,
+        sport_subcategory: str | None,
         entry_price: float | None,
         implied_prob: float | None,
         confidence: float | None,
@@ -691,12 +708,14 @@ class MarketStateManager:
             self._conn.execute(
                 """
                 UPDATE trade_outcomes
-                SET predicted_outcome = ?, entry_price = ?, implied_prob = ?, confidence = ?, amount_usdc = ?,
+                SET predicted_outcome = ?, sport_subcategory = COALESCE(?, sport_subcategory),
+                    entry_price = ?, implied_prob = ?, confidence = ?, amount_usdc = ?,
                     shares = ?, last_updated = ?, resolution_state = COALESCE(resolution_state, 'unresolved')
                 WHERE market_id = ?
                 """,
                 (
                     predicted_outcome,
+                    sport_subcategory,
                     weighted_price,
                     weighted_implied,
                     confidence,
@@ -710,14 +729,15 @@ class MarketStateManager:
         self._conn.execute(
             """
             INSERT INTO trade_outcomes (
-                market_id, predicted_outcome, entry_price, implied_prob, confidence, amount_usdc, shares,
+                market_id, predicted_outcome, sport_subcategory, entry_price, implied_prob, confidence, amount_usdc, shares,
                 resolved_winning_outcome, won, pnl_estimate, resolved_at, last_updated, resolution_state
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 market_id,
                 predicted_outcome,
+                sport_subcategory,
                 entry_price,
                 implied_prob,
                 confidence,
@@ -914,6 +934,7 @@ class MarketStateManager:
         self._ensure_column("analyses", "refinement_reason", "TEXT")
         self._ensure_column("analyses", "reasoning_hash", "TEXT")
         self._ensure_column("markets", "last_terminal_outcome", "TEXT")
+        self._ensure_column("trade_outcomes", "sport_subcategory", "TEXT")
         self._ensure_column(
             "trade_outcomes",
             "resolution_state",

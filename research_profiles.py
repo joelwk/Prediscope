@@ -93,7 +93,7 @@ _SPORT_SUBCATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
     ),
     "basketball": ("nba", "wnba", "college basketball"),
     "american_football": ("nfl", "college football"),
-    "baseball": ("mlb",),
+    "baseball": ("mlb", "wbc", "world baseball classic", "baseball"),
     "combat_sports": ("mma", "ufc", "boxing"),
     "motorsport": ("f1", "formula 1", "grand prix"),
 }

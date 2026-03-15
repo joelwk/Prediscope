@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from calibration import build_counterfactual_flags, compute_adaptive_thresholds
+import sqlite3
+
+from calibration import (
+    build_counterfactual_flags,
+    compute_adaptive_thresholds,
+    compute_category_edge_adjustments,
+)
 
 
 def test_build_counterfactual_flags_with_edge() -> None:
@@ -54,3 +60,35 @@ def test_compute_adaptive_thresholds_with_insufficient_samples() -> None:
     assert recommendation["recommended_min_market_edge_for_trade"] == 0.05
     assert recommendation["recommended_orderbook_spread_cutoff"] == 0.08
     assert recommendation["recommended_analysis_max_workers"] == 3
+
+
+def test_compute_category_edge_adjustments_recommends_underperformers(tmp_path) -> None:
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE trade_outcomes (
+                market_id TEXT PRIMARY KEY,
+                sport_subcategory TEXT,
+                entry_price REAL,
+                won INTEGER
+            )
+            """
+        )
+        rows = []
+        for idx in range(12):
+            rows.append((f"es-{idx}", "esports", 0.70, 1 if idx < 3 else 0))
+        for idx in range(12):
+            rows.append((f"hk-{idx}", "hockey", 0.55, 1 if idx < 7 else 0))
+        conn.executemany(
+            "INSERT INTO trade_outcomes (market_id, sport_subcategory, entry_price, won) VALUES (?, ?, ?, ?)",
+            rows,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    recs = compute_category_edge_adjustments(str(db_path), min_samples=10)
+    assert recs.get("esports") == 0.1
+    assert "hockey" not in recs

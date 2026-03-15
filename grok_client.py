@@ -33,6 +33,16 @@ _RE_LOW_INFORMATION = re.compile(
     r"(?:evidence|information|data))",
     re.IGNORECASE,
 )
+_RE_CONCRETE_NEWS = re.compile(
+    r"(injur|suspend|ruled out|doubtful|questionable|out for|"
+    r"will not play|scratch|lineup change|called up|sent down|"
+    r"confirmed|announced|official)",
+    re.IGNORECASE,
+)
+_RE_CREDIBLE_SOURCE = re.compile(
+    r"(espn|nhl\.com|nba\.com|cbssports|reuters|apnews|the athletic|rotowire|atptour|wtatennis)",
+    re.IGNORECASE,
+)
 _REQUIRED_DECISION_FIELDS = {"should_trade", "outcome", "confidence", "bet_size_pct", "reasoning"}
 _XAI_CLIENT_TIMEOUT_SECONDS = 600
 _STREAM_TIMEOUT_SECONDS = 300
@@ -41,6 +51,8 @@ _PROB_CONSISTENCY_TOLERANCE = 0.08
 _MIN_MARKET_EDGE_FOR_TRADE = 0.05
 _LOW_QUALITY_EDGE_BUFFER = 0.08
 _LOW_QUALITY_EVIDENCE_THRESHOLD = 0.55
+_CONCRETE_NEWS_BONUS = 0.10
+_LOW_PRICE_WEAK_EVIDENCE_PENALTY = 0.10
 _MAX_MODEL_RESPONSE_LOG_CHARS = 500
 _SYSTEM_PROMPT_SHARED = (
     "Output must strictly match the response schema.\n"
@@ -361,6 +373,8 @@ class GrokClient:
 
         no_external_odds = bool(_RE_NO_EXTERNAL_ODDS.search(decision.reasoning or ""))
         low_information = bool(_RE_LOW_INFORMATION.search(decision.reasoning or ""))
+        has_concrete_news = bool(_RE_CONCRETE_NEWS.search(decision.reasoning or ""))
+        has_credible_source = bool(_RE_CREDIBLE_SOURCE.search(decision.reasoning or ""))
         prob_component = 0.0
         if implied is not None and my_prob is not None:
             prob_component = 0.55
@@ -384,6 +398,10 @@ class GrokClient:
             consistency_component -= 0.10
 
         evidence_quality = prob_component + source_component + max(0.0, consistency_component)
+        if has_concrete_news and has_credible_source:
+            evidence_quality += _CONCRETE_NEWS_BONUS
+        if not has_concrete_news and implied is not None and implied < 0.50:
+            evidence_quality -= _LOW_PRICE_WEAK_EVIDENCE_PENALTY
         if no_external_odds:
             evidence_quality = min(evidence_quality, 0.5)
         if low_information:

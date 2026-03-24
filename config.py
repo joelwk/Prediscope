@@ -35,6 +35,10 @@ class Settings:
     # Confidence caps to prevent overconfidence on high-variance events
     MAX_SPORTS_CONFIDENCE: float = 0.80  # Cap sports bets at 80% confidence
     MAX_ESPORTS_CONFIDENCE: float = 0.75  # Cap esports at 75%
+    SPORTS_MIN_MODEL_CONFIDENCE: float = 0.66
+    SPORTS_REQUIRE_EXTERNAL_EDGE: bool = True
+    SPORTS_MIN_EXTERNAL_EDGE: float = 0.04
+    SCORE_MAX_EVIDENCE_QUALITY_SPORTS: float = 0.70
 
     # Filtering
     MARKET_CATEGORIES_ALLOWLIST: tuple[str, ...] = ()
@@ -58,6 +62,9 @@ class Settings:
         "sportsbookreview.com",
         "theathletic.com",
         "rotowire.com",
+        "rotoworld.com",
+        "underdognetwork.com",
+        "dailyfaceoff.com",
         "actionnetwork.com",
         "atptour.com",
         "wtatennis.com",
@@ -140,6 +147,10 @@ class Settings:
         "ChampionsLeague",
         "NHL_Stats",
         "ataborasso",
+        "Underdog__NBA",
+        "Underdog__NFL",
+        "NBAInjuryReport",
+        "DailyFaceoff",
         "TennisChannel",
         "WTA",
         "atptour",
@@ -250,6 +261,7 @@ class Settings:
 
     # Bayesian + LMSR + Kelly experimental layers
     BAYESIAN_ENABLED: bool = False
+    BAYESIAN_APPLY_TO_SPORTS: bool = False
     BAYESIAN_SKIP_STALE_UPDATES: bool = True
     BAYESIAN_PRIOR_DEFAULT: float = 0.50
     BAYESIAN_MIN_UPDATES_FOR_TRADE: int = 2
@@ -403,6 +415,22 @@ def load_settings() -> Settings:
         ),
         MAX_ESPORTS_CONFIDENCE=_read_env_float(
             "MAX_ESPORTS_CONFIDENCE", Settings.MAX_ESPORTS_CONFIDENCE
+        ),
+        SPORTS_MIN_MODEL_CONFIDENCE=_read_env_float(
+            "SPORTS_MIN_MODEL_CONFIDENCE",
+            Settings.SPORTS_MIN_MODEL_CONFIDENCE,
+        ),
+        SPORTS_REQUIRE_EXTERNAL_EDGE=_read_env_bool(
+            "SPORTS_REQUIRE_EXTERNAL_EDGE",
+            Settings.SPORTS_REQUIRE_EXTERNAL_EDGE,
+        ),
+        SPORTS_MIN_EXTERNAL_EDGE=_read_env_float(
+            "SPORTS_MIN_EXTERNAL_EDGE",
+            Settings.SPORTS_MIN_EXTERNAL_EDGE,
+        ),
+        SCORE_MAX_EVIDENCE_QUALITY_SPORTS=_read_env_float(
+            "SCORE_MAX_EVIDENCE_QUALITY_SPORTS",
+            Settings.SCORE_MAX_EVIDENCE_QUALITY_SPORTS,
         ),
         SLIPPAGE_CONFIDENCE_THRESHOLD=_read_env_float(
             "SLIPPAGE_CONFIDENCE_THRESHOLD",
@@ -599,6 +627,10 @@ def load_settings() -> Settings:
             "BAYESIAN_ENABLED",
             Settings.BAYESIAN_ENABLED,
         ),
+        BAYESIAN_APPLY_TO_SPORTS=_read_env_bool(
+            "BAYESIAN_APPLY_TO_SPORTS",
+            Settings.BAYESIAN_APPLY_TO_SPORTS,
+        ),
         BAYESIAN_SKIP_STALE_UPDATES=_read_env_bool(
             "BAYESIAN_SKIP_STALE_UPDATES",
             Settings.BAYESIAN_SKIP_STALE_UPDATES,
@@ -728,6 +760,13 @@ def load_settings() -> Settings:
             "OPPOSITE_OUTCOME_STRATEGY": strategy,
             "SCORE_GATE_MODE": score_mode,
             "KELLY_MIN_BET_POLICY": kelly_min_bet_policy,
+            "SPORTS_MIN_MODEL_CONFIDENCE": max(
+                0.0, min(1.0, settings.SPORTS_MIN_MODEL_CONFIDENCE)
+            ),
+            "SPORTS_MIN_EXTERNAL_EDGE": max(0.0, settings.SPORTS_MIN_EXTERNAL_EDGE),
+            "SCORE_MAX_EVIDENCE_QUALITY_SPORTS": max(
+                0.0, min(1.0, settings.SCORE_MAX_EVIDENCE_QUALITY_SPORTS)
+            ),
         }
     )
 

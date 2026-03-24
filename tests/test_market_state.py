@@ -301,3 +301,57 @@ def test_last_trade_timestamp_and_subcategory_persistence(tmp_path) -> None:
         assert row["sport_subcategory"] == "hockey"
     finally:
         manager.close()
+
+
+def test_record_trade_persists_analysis_and_score_metadata(tmp_path) -> None:
+    manager = MarketStateManager(str(tmp_path / "state.db"))
+    try:
+        market_id = "m-metadata"
+        analysis_id = manager.record_analysis(market_id, _decision(0.67), is_refined=False)
+        manager.record_trade(
+            market_id,
+            OrderResponse(id="o-meta", raw={"outcome": "YES"}),
+            8.0,
+            outcome="YES",
+            confidence=0.72,
+            model_confidence=0.67,
+            bayesian_posterior=0.72,
+            final_score=0.19,
+            edge_market=0.11,
+            edge_external=0.05,
+            evidence_quality=0.65,
+            analysis_id=analysis_id,
+        )
+        outcome_row = manager._conn.execute(
+            """
+            SELECT model_confidence, bayesian_posterior, final_score, analysis_id
+            FROM trade_outcomes
+            WHERE market_id = ?
+            """,
+            (market_id,),
+        ).fetchone()
+        assert outcome_row is not None
+        assert round(float(outcome_row["model_confidence"]), 2) == 0.67
+        assert round(float(outcome_row["bayesian_posterior"]), 2) == 0.72
+        assert round(float(outcome_row["final_score"]), 2) == 0.19
+        assert int(outcome_row["analysis_id"]) == analysis_id
+
+        event_row = manager._conn.execute(
+            """
+            SELECT model_confidence, bayesian_posterior, final_score, edge_market, edge_external,
+                   evidence_quality, analysis_id
+            FROM trade_outcome_events
+            WHERE market_id = ? AND order_id = ?
+            """,
+            (market_id, "o-meta"),
+        ).fetchone()
+        assert event_row is not None
+        assert round(float(event_row["model_confidence"]), 2) == 0.67
+        assert round(float(event_row["bayesian_posterior"]), 2) == 0.72
+        assert round(float(event_row["final_score"]), 2) == 0.19
+        assert round(float(event_row["edge_market"]), 2) == 0.11
+        assert round(float(event_row["edge_external"]), 2) == 0.05
+        assert round(float(event_row["evidence_quality"]), 2) == 0.65
+        assert int(event_row["analysis_id"]) == analysis_id
+    finally:
+        manager.close()

@@ -89,6 +89,10 @@ class MarketStateManager:
                     entry_price REAL,
                     implied_prob REAL,
                     confidence REAL,
+                    model_confidence REAL,
+                    bayesian_posterior REAL,
+                    final_score REAL,
+                    analysis_id INTEGER,
                     amount_usdc REAL,
                     shares REAL,
                     resolved_winning_outcome TEXT,
@@ -109,6 +113,13 @@ class MarketStateManager:
                     entry_price REAL,
                     implied_prob REAL,
                     confidence REAL,
+                    model_confidence REAL,
+                    bayesian_posterior REAL,
+                    final_score REAL,
+                    edge_market REAL,
+                    edge_external REAL,
+                    evidence_quality REAL,
+                    analysis_id INTEGER,
                     amount_usdc REAL,
                     shares REAL,
                     timestamp TEXT,
@@ -415,15 +426,16 @@ class MarketStateManager:
         decision: TradeDecision,
         is_refined: bool,
         refinement_reason: str | None = None,
-    ) -> None:
+    ) -> int:
         timestamp = datetime.now(timezone.utc).isoformat()
         reasoning_hash = _build_reasoning_hash(
             decision.reasoning,
             decision.outcome,
             decision.confidence,
         )
+        analysis_id = 0
         with self._conn:
-            self._conn.execute(
+            cursor = self._conn.execute(
                 """
                 INSERT INTO analyses (
                     market_id, confidence, outcome, reasoning, reasoning_hash, timestamp,
@@ -441,6 +453,7 @@ class MarketStateManager:
                     refinement_reason,
                 ),
             )
+            analysis_id = int(cursor.lastrowid or 0)
         logger.debug(
             "Recorded analysis: market=%s confidence=%.4f refined=%s reason=%s",
             market_id,
@@ -448,6 +461,7 @@ class MarketStateManager:
             is_refined,
             refinement_reason or "-",
         )
+        return analysis_id
 
     def record_terminal_outcome(self, market_id: str, terminal_outcome: str) -> None:
         with self._conn:
@@ -471,6 +485,13 @@ class MarketStateManager:
         implied_prob: float | None = None,
         confidence: float | None = None,
         shares: float | None = None,
+        model_confidence: float | None = None,
+        bayesian_posterior: float | None = None,
+        final_score: float | None = None,
+        edge_market: float | None = None,
+        edge_external: float | None = None,
+        evidence_quality: float | None = None,
+        analysis_id: int | None = None,
     ) -> None:
         timestamp = datetime.now(timezone.utc).isoformat()
         order_id = _extract_order_id(order)
@@ -572,6 +593,10 @@ class MarketStateManager:
                 entry_price=entry_price,
                 implied_prob=implied_prob,
                 confidence=confidence,
+                model_confidence=model_confidence,
+                bayesian_posterior=bayesian_posterior,
+                final_score=final_score,
+                analysis_id=analysis_id,
                 amount_usdc=amount,
                 shares=shares,
                 timestamp=timestamp,
@@ -583,6 +608,13 @@ class MarketStateManager:
                 entry_price=entry_price,
                 implied_prob=implied_prob,
                 confidence=confidence,
+                model_confidence=model_confidence,
+                bayesian_posterior=bayesian_posterior,
+                final_score=final_score,
+                edge_market=edge_market,
+                edge_external=edge_external,
+                evidence_quality=evidence_quality,
+                analysis_id=analysis_id,
                 amount_usdc=amount,
                 shares=shares,
                 timestamp=timestamp,
@@ -678,6 +710,10 @@ class MarketStateManager:
         entry_price: float | None,
         implied_prob: float | None,
         confidence: float | None,
+        model_confidence: float | None,
+        bayesian_posterior: float | None,
+        final_score: float | None,
+        analysis_id: int | None,
         amount_usdc: float | None,
         shares: float | None,
         timestamp: str,
@@ -710,6 +746,7 @@ class MarketStateManager:
                 UPDATE trade_outcomes
                 SET predicted_outcome = ?, sport_subcategory = COALESCE(?, sport_subcategory),
                     entry_price = ?, implied_prob = ?, confidence = ?, amount_usdc = ?,
+                    model_confidence = ?, bayesian_posterior = ?, final_score = ?, analysis_id = ?,
                     shares = ?, last_updated = ?, resolution_state = COALESCE(resolution_state, 'unresolved')
                 WHERE market_id = ?
                 """,
@@ -720,6 +757,10 @@ class MarketStateManager:
                     weighted_implied,
                     confidence,
                     total_amount,
+                    model_confidence,
+                    bayesian_posterior,
+                    final_score,
+                    analysis_id,
                     total_shares,
                     timestamp,
                     market_id,
@@ -729,10 +770,11 @@ class MarketStateManager:
         self._conn.execute(
             """
             INSERT INTO trade_outcomes (
-                market_id, predicted_outcome, sport_subcategory, entry_price, implied_prob, confidence, amount_usdc, shares,
+                market_id, predicted_outcome, sport_subcategory, entry_price, implied_prob, confidence,
+                model_confidence, bayesian_posterior, final_score, analysis_id, amount_usdc, shares,
                 resolved_winning_outcome, won, pnl_estimate, resolved_at, last_updated, resolution_state
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 market_id,
@@ -741,6 +783,10 @@ class MarketStateManager:
                 entry_price,
                 implied_prob,
                 confidence,
+                model_confidence,
+                bayesian_posterior,
+                final_score,
+                analysis_id,
                 amount_usdc,
                 shares,
                 None,
@@ -760,6 +806,13 @@ class MarketStateManager:
         entry_price: float | None,
         implied_prob: float | None,
         confidence: float | None,
+        model_confidence: float | None,
+        bayesian_posterior: float | None,
+        final_score: float | None,
+        edge_market: float | None,
+        edge_external: float | None,
+        evidence_quality: float | None,
+        analysis_id: int | None,
         amount_usdc: float | None,
         shares: float | None,
         timestamp: str,
@@ -768,9 +821,10 @@ class MarketStateManager:
             """
             INSERT OR REPLACE INTO trade_outcome_events (
                 market_id, order_id, predicted_outcome, entry_price, implied_prob, confidence,
+                model_confidence, bayesian_posterior, final_score, edge_market, edge_external, evidence_quality, analysis_id,
                 amount_usdc, shares, timestamp, resolved_winning_outcome, won, pnl_estimate, resolved_at, resolution_state
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 market_id,
@@ -779,6 +833,13 @@ class MarketStateManager:
                 entry_price,
                 implied_prob,
                 confidence,
+                model_confidence,
+                bayesian_posterior,
+                final_score,
+                edge_market,
+                edge_external,
+                evidence_quality,
+                analysis_id,
                 amount_usdc,
                 shares,
                 timestamp,
@@ -789,6 +850,22 @@ class MarketStateManager:
                 "unresolved",
             ),
         )
+
+    def get_latest_analysis_id(self, market_id: str) -> int | None:
+        row = self._conn.execute(
+            """
+            SELECT id
+            FROM analyses
+            WHERE market_id = ?
+            ORDER BY timestamp DESC, id DESC
+            LIMIT 1
+            """,
+            (market_id,),
+        ).fetchone()
+        if not row:
+            return None
+        value = row["id"]
+        return int(value) if value is not None else None
 
     def get_markets_needing_reanalysis(self, hours_since: int) -> list[str]:
         hours_since = max(hours_since, 0)
@@ -935,6 +1012,17 @@ class MarketStateManager:
         self._ensure_column("analyses", "reasoning_hash", "TEXT")
         self._ensure_column("markets", "last_terminal_outcome", "TEXT")
         self._ensure_column("trade_outcomes", "sport_subcategory", "TEXT")
+        self._ensure_column("trade_outcomes", "model_confidence", "REAL")
+        self._ensure_column("trade_outcomes", "bayesian_posterior", "REAL")
+        self._ensure_column("trade_outcomes", "final_score", "REAL")
+        self._ensure_column("trade_outcomes", "analysis_id", "INTEGER")
+        self._ensure_column("trade_outcome_events", "model_confidence", "REAL")
+        self._ensure_column("trade_outcome_events", "bayesian_posterior", "REAL")
+        self._ensure_column("trade_outcome_events", "final_score", "REAL")
+        self._ensure_column("trade_outcome_events", "edge_market", "REAL")
+        self._ensure_column("trade_outcome_events", "edge_external", "REAL")
+        self._ensure_column("trade_outcome_events", "evidence_quality", "REAL")
+        self._ensure_column("trade_outcome_events", "analysis_id", "INTEGER")
         self._ensure_column(
             "trade_outcomes",
             "resolution_state",

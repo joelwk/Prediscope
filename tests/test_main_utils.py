@@ -13,8 +13,12 @@ from main import (
     _edge_threshold_for_market,
     _effective_position_override_threshold,
     _filter_markets,
+    _is_sports_market,
     _log_settings_summary,
+    _score_decision_for_market,
     _should_adjust_position,
+    _should_apply_bayesian_to_market,
+    _sports_guardrail_block_reason,
     _usdc_from_wei,
 )
 from models import Market, MarketOutcome, MarketState, Position, TradeDecision
@@ -208,6 +212,85 @@ class TestMainUtils(unittest.TestCase):
             _cap_effective_confidence_for_market(0.99, politics_market, settings),
             0.99,
         )
+
+    def test_should_apply_bayesian_to_market_respects_sports_toggle(self) -> None:
+        sports_market = Market(id="s2", question="NHL: A vs B", category="sports")
+        politics_market = Market(id="p2", question="Election", category="politics")
+        sports_blocked = Settings(
+            BAYESIAN_ENABLED=True,
+            BAYESIAN_APPLY_TO_SPORTS=False,
+            XAI_API_KEY="xai-key",
+            WALLET_PRIVATE_KEY="wallet-key",
+        )
+        self.assertFalse(_should_apply_bayesian_to_market(sports_market, sports_blocked))
+        self.assertTrue(_should_apply_bayesian_to_market(politics_market, sports_blocked))
+
+        sports_allowed = Settings(
+            BAYESIAN_ENABLED=True,
+            BAYESIAN_APPLY_TO_SPORTS=True,
+            XAI_API_KEY="xai-key",
+            WALLET_PRIVATE_KEY="wallet-key",
+        )
+        self.assertTrue(_should_apply_bayesian_to_market(sports_market, sports_allowed))
+
+    def test_score_decision_for_market_caps_sports_evidence_quality(self) -> None:
+        settings = Settings(
+            SCORE_MAX_EVIDENCE_QUALITY_SPORTS=0.65,
+            XAI_API_KEY="xai-key",
+            WALLET_PRIVATE_KEY="wallet-key",
+        )
+        sports_market = Market(id="s3", question="NBA: A vs B", category="sports")
+        decision = TradeDecision(
+            should_trade=True,
+            outcome="A",
+            confidence=0.7,
+            bet_size_pct=0.5,
+            reasoning="test",
+            evidence_quality=0.95,
+        )
+        scored = _score_decision_for_market(decision, sports_market, settings)
+        self.assertEqual(scored.evidence_quality, 0.65)
+
+    def test_sports_guardrail_block_reason_requires_model_confidence_and_external_edge(self) -> None:
+        settings = Settings(
+            SPORTS_MIN_MODEL_CONFIDENCE=0.66,
+            SPORTS_REQUIRE_EXTERNAL_EDGE=True,
+            SPORTS_MIN_EXTERNAL_EDGE=0.04,
+            XAI_API_KEY="xai-key",
+            WALLET_PRIVATE_KEY="wallet-key",
+        )
+        sports_market = Market(id="s4", question="NHL: A vs B", category="sports")
+        self.assertEqual(
+            _sports_guardrail_block_reason(
+                sports_market,
+                settings,
+                model_confidence=0.63,
+                edge_external=0.06,
+            ),
+            "sports_model_confidence_below_min",
+        )
+        self.assertEqual(
+            _sports_guardrail_block_reason(
+                sports_market,
+                settings,
+                model_confidence=0.70,
+                edge_external=0.02,
+            ),
+            "sports_external_edge_below_min",
+        )
+        self.assertIsNone(
+            _sports_guardrail_block_reason(
+                sports_market,
+                settings,
+                model_confidence=0.70,
+                edge_external=0.06,
+            )
+        )
+
+    def test_is_sports_market_true_for_sports_and_esports(self) -> None:
+        self.assertTrue(_is_sports_market(Market(id="s5", question="NBA game", category="sports")))
+        self.assertTrue(_is_sports_market(Market(id="e5", question="Valorant match", category="esports")))
+        self.assertFalse(_is_sports_market(Market(id="p5", question="Election", category="politics")))
 
     def test_edge_threshold_applies_fallback_and_coinflip_guards(self) -> None:
         settings = Settings(

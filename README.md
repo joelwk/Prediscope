@@ -52,13 +52,12 @@ python main.py
 
 ## Safe Mode vs Live Mode
 
-Default `.env.example` is safety-first:
+`.env.example` is execution-oriented and enables live paths by default.
+For safest startup, switch these before first run:
 
 - `DRY_RUN=true`
 - `AUTO_APPROVE_USDC=false`
 - `EXECUTE_ONCHAIN=false`
-
-This means no live orders or approvals by default.
 
 ### Enable Live Trading (Explicit Opt-In)
 
@@ -89,6 +88,10 @@ Everything else has defaults in `.env.example`, including conservative rollout s
 ## Strategy Controls
 
 - `MIN_EDGE` sets the minimum edge required before a market can pass trade gating.
+- `SPORTS_MIN_MODEL_CONFIDENCE` requires a stronger raw model signal before sports trades are eligible.
+- `SPORTS_REQUIRE_EXTERNAL_EDGE` and `SPORTS_MIN_EXTERNAL_EDGE` require market-vs-external consensus for sports picks.
+- `BAYESIAN_APPLY_TO_SPORTS=false` keeps Bayesian tracking enabled without using it to inflate sports confidence.
+- `SCORE_MAX_EVIDENCE_QUALITY_SPORTS` caps score inflation from evidence heuristics in sports.
 - `KELLY_SIZING_ENABLED` switches sizing from edge scaling to fractional Kelly.
 - `KELLY_MIN_BET_POLICY` controls how sub-floor Kelly bets are handled: `skip`, `floor`, or `fallback_edge_scaling`.
 - `REANALYSIS_COOLDOWN_HOURS` and `URGENT_REANALYSIS_COOLDOWN_HOURS` now apply action-aware cooldowns, so non-actionable outcomes (for example `no_trade_recommended` or `kelly_sub_floor_skip`) recycle faster.
@@ -130,3 +133,16 @@ If startup fails with `Missing required environment variables`, check `.env` and
 ```bash
 poetry run pytest -q -s
 ```
+
+## Accuracy Review Workflow
+
+Use the built-in review script to reconstruct recent losses from runtime artifacts:
+
+```bash
+python scripts/accuracy_review.py --market-id 20983 --market-id 20910
+```
+
+The script reads `data/market_state.db`, `logs/predictbot.log`, and `logs/trades.log` to print:
+- trade timeline and fills
+- analysis confidence progression
+- calibration/log events around each market

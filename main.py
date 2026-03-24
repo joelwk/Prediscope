@@ -460,6 +460,56 @@ def _cap_effective_confidence_for_market(
     return min(confidence, _max_confidence_for_market(market, settings))
 
 
+def _is_sports_market(market: Market | None) -> bool:
+    if not market:
+        return False
+    is_sports, is_esports = market_category_flags(market)
+    return is_sports or is_esports
+
+
+def _should_apply_bayesian_to_market(market: Market | None, settings: Settings) -> bool:
+    if not settings.BAYESIAN_ENABLED:
+        return False
+    if not _is_sports_market(market):
+        return True
+    return settings.BAYESIAN_APPLY_TO_SPORTS
+
+
+def _score_decision_for_market(
+    decision: TradeDecision,
+    market: Market | None,
+    settings: Settings,
+) -> TradeDecision:
+    if not _is_sports_market(market):
+        return decision
+    evidence_quality = min(
+        decision.evidence_quality,
+        settings.SCORE_MAX_EVIDENCE_QUALITY_SPORTS,
+    )
+    if evidence_quality == decision.evidence_quality:
+        return decision
+    return decision.model_copy(update={"evidence_quality": evidence_quality})
+
+
+def _sports_guardrail_block_reason(
+    market: Market | None,
+    settings: Settings,
+    model_confidence: float,
+    edge_external: float | None,
+) -> str | None:
+    if not _is_sports_market(market):
+        return None
+    if model_confidence < settings.SPORTS_MIN_MODEL_CONFIDENCE:
+        return "sports_model_confidence_below_min"
+    if not settings.SPORTS_REQUIRE_EXTERNAL_EDGE:
+        return None
+    if edge_external is None:
+        return "sports_missing_external_edge"
+    if edge_external < settings.SPORTS_MIN_EXTERNAL_EDGE:
+        return "sports_external_edge_below_min"
+    return None
+
+
 def _effective_position_override_threshold(
     market: Market | None,
     settings: Settings,
@@ -1152,7 +1202,9 @@ def _log_settings_summary(settings) -> None:
             "categories_blocklist": settings.MARKET_CATEGORIES_BLOCKLIST,
             "score_gate_mode": settings.SCORE_GATE_MODE,
             "score_gate_threshold": settings.SCORE_GATE_THRESHOLD,
+            "score_max_evidence_quality_sports": settings.SCORE_MAX_EVIDENCE_QUALITY_SPORTS,
             "bayesian_enabled": settings.BAYESIAN_ENABLED,
+            "bayesian_apply_to_sports": settings.BAYESIAN_APPLY_TO_SPORTS,
             "bayesian_skip_stale_updates": settings.BAYESIAN_SKIP_STALE_UPDATES,
             "lmsr_enabled": settings.LMSR_ENABLED,
             "kelly_sizing_enabled": settings.KELLY_SIZING_ENABLED,
@@ -1160,6 +1212,9 @@ def _log_settings_summary(settings) -> None:
             "kelly_fraction_short_horizon_hours": settings.KELLY_FRACTION_SHORT_HORIZON_HOURS,
             "kelly_fraction_short_horizon": settings.KELLY_FRACTION_SHORT_HORIZON,
             "kelly_min_bet_policy": settings.KELLY_MIN_BET_POLICY,
+            "sports_min_model_confidence": settings.SPORTS_MIN_MODEL_CONFIDENCE,
+            "sports_require_external_edge": settings.SPORTS_REQUIRE_EXTERNAL_EDGE,
+            "sports_min_external_edge": settings.SPORTS_MIN_EXTERNAL_EDGE,
             "fallback_edge_min_edge": settings.FALLBACK_EDGE_MIN_EDGE,
             "coinflip_price_lower": settings.COINFLIP_PRICE_LOWER,
             "coinflip_price_upper": settings.COINFLIP_PRICE_UPPER,
@@ -1788,6 +1843,7 @@ def main() -> None:
 
                 previous_reasoning_hash: str | None = None
                 current_reasoning_hash = _build_reasoning_hash(decision)
+                latest_analysis_id: int | None = None
                 if settings.BAYESIAN_SKIP_STALE_UPDATES:
                     try:
                         previous_reasoning_hash = state_manager.get_last_reasoning_hash(market.id)
@@ -1800,7 +1856,7 @@ def main() -> None:
                         )
 
                 try:
-                    state_manager.record_analysis(
+                    latest_analysis_id = state_manager.record_analysis(
                         market.id,
                         decision,
                         is_refined=was_refined,
@@ -1898,7 +1954,8 @@ def main() -> None:
                 )
                 lmsr_execution_price: float | None = None
                 ineff_signal: float | None = None
-                effective_confidence = decision.confidence
+                model_confidence = decision.confidence
+                effective_confidence = model_confidence
                 likelihood_ratio = decision.likelihood_ratio
 
                 if settings.BAYESIAN_ENABLED and market.outcomes:
@@ -1988,24 +2045,36 @@ def main() -> None:
                                 min_updates_for_trade=bayesian_min_updates_for_market,
                             )
                             if bayesian_posterior_applied is not None:
-                                capped_confidence = _cap_effective_confidence_for_market(
-                                    bayesian_posterior_applied,
-                                    market,
-                                    settings,
-                                )
-                                if capped_confidence < bayesian_posterior_applied:
+                                if _should_apply_bayesian_to_market(market, settings):
+                                    capped_confidence = _cap_effective_confidence_for_market(
+                                        bayesian_posterior_applied,
+                                        market,
+                                        settings,
+                                    )
+                                    if capped_confidence < bayesian_posterior_applied:
+                                        logger.debug(
+                                            "Capped Bayesian posterior: market=%s posterior=%.4f capped=%.4f",
+                                            market.id,
+                                            bayesian_posterior_applied,
+                                            capped_confidence,
+                                            data={
+                                                "market_id": market.id,
+                                                "bayesian_posterior_raw": bayesian_posterior_applied,
+                                                "bayesian_posterior_capped": capped_confidence,
+                                            },
+                                        )
+                                    effective_confidence = capped_confidence
+                                else:
                                     logger.debug(
-                                        "Capped Bayesian posterior: market=%s posterior=%.4f capped=%.4f",
+                                        "Bayesian posterior computed but not applied for sports market: market=%s posterior=%.4f",
                                         market.id,
                                         bayesian_posterior_applied,
-                                        capped_confidence,
                                         data={
                                             "market_id": market.id,
                                             "bayesian_posterior_raw": bayesian_posterior_applied,
-                                            "bayesian_posterior_capped": capped_confidence,
+                                            "bayesian_apply_to_sports": settings.BAYESIAN_APPLY_TO_SPORTS,
                                         },
                                     )
-                                effective_confidence = capped_confidence
                             elif bayesian_posterior_raw is not None:
                                 logger.debug(
                                     "Bayesian posterior not applied yet: market=%s updates=%d min_updates=%d",
@@ -2090,6 +2159,45 @@ def main() -> None:
                     )
                     continue
 
+                sports_guardrail_reason = _sports_guardrail_block_reason(
+                    market=market,
+                    settings=settings,
+                    model_confidence=model_confidence,
+                    edge_external=decision.edge_external,
+                )
+                if sports_guardrail_reason:
+                    trades_skipped_edge += 1
+                    log_trade_decision(
+                        market_id=market.id,
+                        question=market.question,
+                        decision=decision_for_edge.model_dump(),
+                        execution_audit={
+                            "decision_terminal": True,
+                            "final_action": "skip",
+                            "final_reason": sports_guardrail_reason,
+                            "model_confidence": model_confidence,
+                            "sports_min_model_confidence": settings.SPORTS_MIN_MODEL_CONFIDENCE,
+                            "edge_external": decision.edge_external,
+                            "sports_min_external_edge": settings.SPORTS_MIN_EXTERNAL_EDGE,
+                            "sports_require_external_edge": settings.SPORTS_REQUIRE_EXTERNAL_EDGE,
+                        },
+                    )
+                    _record_terminal_outcome(state_manager, market.id, sports_guardrail_reason)
+                    question_short = market.question[:40] + "..." if len(market.question) > 40 else market.question
+                    logger.info(
+                        "SKIP [%s] '%s' -> sports guardrail (%s)",
+                        market.id,
+                        question_short,
+                        sports_guardrail_reason,
+                        data={
+                            "market_id": market.id,
+                            "reason": sports_guardrail_reason,
+                            "model_confidence": model_confidence,
+                            "edge_external": decision.edge_external,
+                        },
+                    )
+                    continue
+
                 if _is_uniform_implied_probability(implied_prob, market.outcomes):
                     uniform_implied = 1.0 / len(market.outcomes)
                     trades_skipped_edge += 1
@@ -2142,9 +2250,14 @@ def main() -> None:
                     )
                     kelly_fraction_value = _kelly_fraction_for_market_horizon(market, settings)
 
+                decision_for_score = _score_decision_for_market(
+                    decision_for_edge,
+                    market,
+                    settings,
+                )
                 score_result = compute_final_score(
                     market=market,
-                    decision=decision_for_edge,
+                    decision=decision_for_score,
                     implied_prob_market=implied_prob,
                     bayesian_posterior=bayesian_posterior_applied,
                     lmsr_price=lmsr_execution_price,
@@ -2996,6 +3109,13 @@ def main() -> None:
                         implied_prob=implied_prob,
                         confidence=decision_for_edge.confidence,
                         shares=client_shares,
+                        model_confidence=model_confidence,
+                        bayesian_posterior=bayesian_posterior_applied,
+                        final_score=score_result.final_score,
+                        edge_market=edge_value,
+                        edge_external=decision.edge_external,
+                        evidence_quality=decision_for_score.evidence_quality,
+                        analysis_id=latest_analysis_id,
                     )
                 except Exception as exc:
                     logger.warning(
